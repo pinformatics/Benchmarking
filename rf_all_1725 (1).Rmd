@@ -1,0 +1,303 @@
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+```
+
+
+
+
+
+
+
+```
+
+```{r setup, results="hide"}
+# ============================================================
+# Libraries
+# ============================================================
+library(tidyverse)
+library(caret)
+library(glue)
+library(pROC)
+library(MLmetrics)
+source("utils.R")  
+
+# ============================================================
+# Folder config
+# ============================================================
+input_folder <- "data/paper2/split_models1725_0122/"
+output_folder <- "output1725/result0122"
+
+file_list <- list.files(path = input_folder, pattern = "\\.rds$", full.names = TRUE)
+
+# ============================================================
+# Make sure output folder exists
+# ============================================================
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+}
+
+
+# ============================================================
+# Features to keep
+# ============================================================
+selected_features <- c(
+  "pair_id", "match",
+  "metric_fname_dl", "metric_fname_jw", "metric_fname_soundex",
+  "metric_lname_dl", "metric_lname_jw", "metric_lname_soundex",
+  "metric_name_swaps", "metric_ffreq_a", "metric_ffreq_b",
+  "metric_lfreq_a", "metric_lfreq_b",
+  "metric_dob_dist", "metric_year_dist", "metric_month_dist", "metric_day_dist",
+  "metric_dm_swaps", "birth_year_a", "birth_year_b",
+  "metric_gender_code_ff", "metric_gender_code_mm",
+  "metric_race_code_same", "metric_race_code_ww_bb",
+  "metric_potential_marriage"
+)
+
+# ============================================================
+# Clean data function
+# ============================================================
+clean_data <- function(df_input) {
+  df_input %>%
+    select(all_of(selected_features)) %>%
+    mutate(
+      birth_year_a = as.numeric(birth_year_a),
+      birth_year_b = as.numeric(birth_year_b),
+      match = as.factor(match)   # ⭐ required for prSummary metrics
+    )
+}
+
+# ============================================================
+# Training across files
+# ============================================================
+for (file_path in file_list) {
+  
+  file_name <- tools::file_path_sans_ext(basename(file_path))
+  message(glue("Processing file: {file_name}"))
+
+  df <- read_rds(file_path)
+
+  df_train <- clean_data(df$df_train)
+  test_subsets <- map(df$test_subsets, clean_data)
+
+  # ============================================================
+  # STEP 1: Compute class weights
+  # ============================================================
+  pos_ratio <- mean(df_train$match == "1")
+  neg_ratio <- mean(df_train$match == "0")
+
+  # ⭐ Weight positive class more: focus on false positive penalty
+  class_weights <- ifelse(
+    df_train$match == "1",
+    (neg_ratio / pos_ratio) * 1.8,  # <— BOOST precision
+    1
+  )
+
+  # ============================================================
+  # STEP 2: Configure prSummary
+  # ============================================================
+  # MUST HAVE classProbs + prSummary together
+  train_control <- trainControl(
+    method = "cv",
+    number = 10,
+    verboseIter = TRUE,
+    savePredictions = TRUE,
+    classProbs = TRUE,
+    summaryFunction = prSummary   # ⭐ enable Precision/Recall/F1
+  )
+
+  # ============================================================
+  # STEP 3: Train RF with F1 objective
+  # ============================================================
+  set.seed(230)
+
+  model_rf <- train(
+    match ~ . -pair_id,
+    data = df_train,
+
+    # ⭐ F1 optimization (caret calls F1 as "F")
+    metric = "F",
+
+    # ⭐ apply weights
+    weights = class_weights,
+
+    trControl = train_control,
+
+    # wider search space to improve splitting behavior
+    tuneGrid = expand.grid(.mtry = c(3,4,5,6,7,8)),
+
+    method = "rf",
+    ntree = 2000,
+    na.action = na.pass,
+    importance = TRUE,
+    keep.forest = TRUE,
+    preProcess = c("medianImpute")
+  )
+
+  # ============================================================
+  # STEP 4: save trained RF
+  # ============================================================
+  saveRDS(model_rf, glue("{output_folder}/{file_name}_rf_trained.rds"))
+
+  # ============================================================
+  # STEP 5: Evaluate on test subsets
+  # ============================================================
+  rf_results_all <- tibble(
+    subset = integer(),
+    metrics = list(),
+    confusion_matrix = list(),
+    roc_curve = list(),
+    pred_confidence = list()
+  )
+
+  for (i in seq_along(test_subsets)) {
+    test_set <- test_subsets[[i]]
+    message(glue("Evaluating on Test Subset {i}"))
+
+    # this function should compute Precision, Recall, F1
+    result <- evaluate_model(model_rf, df_test = test_set)
+
+    rf_results_all <- bind_rows(
+      rf_results_all,
+      tibble(
+        subset = i,
+        metrics = list(result$metrics$df_metric_table),
+        confusion_matrix = list(result$metrics$confusion_matrix),
+        roc_curve = list(result$metrics$roc_curve),
+        pred_confidence = list(result$confidence)
+      )
+    )
+  }
+
+  # ============================================================
+  # Save full RF test results
+  # ============================================================
+  saveRDS(rf_results_all, glue("{output_folder}/{file_name}_rf_results_all.rds"))
+
+  rf_metrics_long <- rf_results_all %>%
+    mutate(metrics = map(metrics, ~ as_tibble(.x))) %>%
+    unnest(metrics)
+
+  write_csv(rf_metrics_long, glue("{output_folder}/{file_name}_rf_metrics_summary.csv"))
+
+  message(glue("{file_name} processing completed."))
+}
+
+message("All files processed successfully.")
+
+```
+
+
+
+```{r,message=TRUE}
+
+library(tidyverse)
+library(caret)
+library(glue)
+library(pROC)
+library(MLmetrics)
+source("utils.R")  
+
+input_folder <- "data/paper2/split_models1725_1105/"
+output_folder <- "output1725/result0113"
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+}
+file_list <- list.files(path = input_folder, pattern = "\\.rds$", full.names = TRUE)
+
+selected_features <- c(
+  "pair_id", "match",
+  "metric_fname_dl", "metric_fname_jw", "metric_fname_soundex",
+  "metric_lname_dl", "metric_lname_jw", "metric_lname_soundex",
+  "metric_name_swaps", "metric_ffreq_a", "metric_ffreq_b",
+  "metric_lfreq_a", "metric_lfreq_b",
+  "metric_dob_dist", "metric_year_dist", "metric_month_dist", "metric_day_dist",
+  "metric_dm_swaps", "birth_year_a", "birth_year_b",
+  "metric_gender_code_ff", "metric_gender_code_mm",
+  "metric_race_code_same", "metric_race_code_ww_bb",
+  "metric_potential_marriage"
+)
+
+clean_data <- function(df_input) {
+  df_input %>%
+    select(all_of(selected_features)) %>%
+    mutate(
+      birth_year_a = as.numeric(birth_year_a),
+      birth_year_b = as.numeric(birth_year_b)
+    )
+}
+
+for (file_path in file_list) {
+  file_name <- tools::file_path_sans_ext(basename(file_path))
+  message(glue("Processing file: {file_name}"))
+
+  df <- read_rds(file_path)
+
+  df_train <- clean_data(df$df_train)
+  test_subsets <- map(df$test_subsets, clean_data)
+
+  train_control <- trainControl(
+    method = "cv",
+    number = 5,
+    verboseIter = TRUE,
+    savePredictions = TRUE,
+    classProbs = TRUE
+  )
+
+  set.seed(230)
+  model_rf <- train(
+    match ~ . -pair_id,
+    data = df_train,
+    trControl = train_control,
+    tuneGrid = expand.grid(.mtry = c(2,3,4,5,6)),
+    importance = TRUE,
+    keep.forest = TRUE,
+    metric = "Accuracy",
+    preProcess = c("medianImpute"),
+    ntree = 200,
+    method = "rf",
+    na.action = na.pass
+  )
+
+  saveRDS(model_rf, glue("{output_folder}/{file_name}_rf_trained.rds"))
+
+  rf_results_all <- tibble(
+    subset = integer(),
+    metrics = list(),
+    confusion_matrix = list(),
+    roc_curve = list(),
+    pred_confidence = list()
+  )
+
+  for (i in seq_along(test_subsets)) {
+    test_set <- test_subsets[[i]]
+    message(glue("Evaluating on Test Subset {i}"))
+
+    result <- evaluate_model(model_rf, df_test = test_set)
+
+    rf_results_all <- bind_rows(rf_results_all, tibble(
+      subset = i,
+      metrics = list(result$metrics$df_metric_table),
+      confusion_matrix = list(result$metrics$confusion_matrix),
+      roc_curve = list(result$metrics$roc_curve),
+      pred_confidence = list(result$confidence)
+    ))
+  }
+
+  saveRDS(rf_results_all, glue("{output_folder}/{file_name}_rf_results_all.rds"))
+
+  rf_metrics_long <- rf_results_all %>%
+    mutate(metrics = map(metrics, ~ as_tibble(.x))) %>%
+    unnest(metrics)
+
+  write_csv(rf_metrics_long, glue("{output_folder}/{file_name}_rf_metrics_summary.csv"))
+
+  message(glue("{file_name} processing completed."))
+}
+
+message("All files processed successfully.")
+
+
+
+```

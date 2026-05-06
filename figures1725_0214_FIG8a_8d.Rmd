@@ -1,0 +1,355 @@
+
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+```
+
+
+
+```{r setup, results="hide"}
+# ============================================================
+# Setup
+# ============================================================
+knitr::opts_chunk$set(cache = FALSE, message = FALSE)
+
+library(tidyverse)
+library(patchwork)
+library(scales)
+
+theme_set(theme_light())
+
+# ============================================================
+# Common settings
+# ============================================================
+folder_path <- "output1725/result_0122/result/10000/"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+colors_model <- c(
+  "Random Forest"   = "#009E73",
+  "SVM"             = "#D55E00",
+  "Neural Networks" = "#0072B2",
+  "XGBoost"         = "#6A3D9A"
+)
+
+x_breaks <- seq(0, 0.6, 0.1)
+
+# ============================================================
+# Helper
+# ============================================================
+extract_metric <- function(metrics, name) {
+  map_dbl(metrics, function(m) {
+    i <- which(m$metric == name)
+    if (length(i) == 0) NA_real_ else m$value[i[1]]
+  })
+}
+
+# ============================================================
+# Load data
+# ============================================================
+all_results <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    heterogeneity_rate =
+      str_extract(fname, "e[0-9.]+") |> str_remove("e") |> as.numeric(),
+    model_type = str_extract(fname, "rf|svm|nn|xgb"),
+    f1     = extract_metric(df$metrics, "f1"),
+    auroc  = extract_metric(df$metrics, "auroc"),
+    auprc  = extract_metric(df$metrics, "auprc"),
+    review = extract_metric(df$metrics, "review_pct_99")
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM",
+      nn  = "Neural Networks",
+      xgb = "XGBoost"
+    )
+  )
+
+# ============================================================
+# A. AUPRC (0–100%)
+# ============================================================
+p_auprc <- ggplot(all_results,
+                  aes(heterogeneity_rate, auprc, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "AUPRC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# B. Manual Review (0–100%)
+# ============================================================
+p_review <- ggplot(all_results,
+                   aes(heterogeneity_rate, review, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "Manual review (%)", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# C. AUROC (50–100%)
+# ============================================================
+p_auroc <- ggplot(all_results,
+                  aes(heterogeneity_rate, auroc, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "AUROC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# D. F1 (50–100%)
+# ============================================================
+p_f1 <- ggplot(all_results,
+               aes(heterogeneity_rate, f1, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "F1 score", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# Combine
+# ============================================================
+fig_err <-
+  (p_auprc | p_review) /
+  (p_auroc | p_f1) +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.position = "top",
+    plot.tag = element_text(size = 18, face = "bold")
+  )
+
+fig_err <- fig_err & labs(x = "Heterogeneity rate")
+
+print(fig_err)
+
+# ============================================================
+# Save
+# ============================================================
+ggsave(
+  filename = paste0("figures1725/Figure_err_final_", format(Sys.Date(), "%m%d"), ".png"),
+  plot = fig_err,
+  width = 14,
+  height = 10,
+  dpi = 300
+)
+```
+
+
+
+
+```{r}
+
+# ============================================================
+# Setup
+# ============================================================
+knitr::opts_chunk$set(cache = FALSE, message = FALSE)
+
+library(tidyverse)
+library(patchwork)
+library(scales)
+
+theme_set(theme_light())
+
+# ============================================================
+# Common settings
+# ============================================================
+folder_path <- "output1725/result_0122/result/10000/"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+colors_model <- c(
+  "Random Forest"   = "#009E73",
+  "SVM"             = "#D55E00",
+  "Neural Networks" = "#0072B2",
+  "XGBoost"         = "#6A3D9A"
+)
+
+x_breaks <- seq(0, 0.6, 0.1)
+
+# ============================================================
+# Helper: extract metric
+# ============================================================
+extract_metric <- function(metrics, name) {
+  map_dbl(metrics, function(m) {
+    i <- which(m$metric == name)
+    if (length(i) == 0) NA_real_ else m$value[i[1]]
+  })
+}
+
+# ============================================================
+# Load all metrics ONCE
+# ============================================================
+all_results <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    heterogeneity_rate =
+      str_extract(fname, "e[0-9.]+") |> str_remove("e") |> as.numeric(),
+    model_type = str_extract(fname, "rf|svm|nn|xgb"),
+    f1     = extract_metric(df$metrics, "f1"),
+    auroc  = extract_metric(df$metrics, "auroc"),
+    auprc  = extract_metric(df$metrics, "auprc"),
+    review = extract_metric(df$metrics, "review_pct_99")
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM",
+      nn  = "Neural Networks",
+      xgb = "XGBoost"
+    )
+  )
+
+# ============================================================
+# A. F1 score (50–100%)
+# ============================================================
+p_f1 <- ggplot(all_results,
+               aes(heterogeneity_rate, f1, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "F1 score", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# B. Manual Review % (unchanged)
+# ============================================================
+p_review <- ggplot(all_results,
+                   aes(heterogeneity_rate, review, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.1, 0.5),
+    breaks = seq(0.1, 0.5, 0.05),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "Manual review (%)", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# C. AUROC (50–100%)
+# ============================================================
+p_auroc <- ggplot(all_results,
+                  aes(heterogeneity_rate, auroc, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "AUROC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# D. AUPRC (50–100%)
+# ============================================================
+p_auprc <- ggplot(all_results,
+                  aes(heterogeneity_rate, auprc, color = model_type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks,
+                     labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "AUPRC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# Combine (A | B) / (C | D)
+# ============================================================
+fig_err <-
+  (p_f1 | p_review) /
+  (p_auroc | p_auprc) +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.position = "top",
+    plot.tag = element_text(size = 18, face = "bold")
+  )
+
+# shared x-axis label (patchwork-safe)
+fig_err <- fig_err & labs(x = "Heterogeneity rate")
+
+print(fig_err)
+
+# ============================================================
+# Save
+# ============================================================
+ggsave(
+  filename = paste0("figures1725/Figure_err_ABCD_", format(Sys.Date(), "%m%d"), ".png"),
+  plot = fig_err,
+  width = 14,
+  height = 10,
+  dpi = 300
+)
+
+```
+

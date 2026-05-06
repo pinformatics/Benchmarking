@@ -1,0 +1,265 @@
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+
+library(reticulate)
+
+use_condaenv("r-new-env", required = TRUE)
+
+py_config()
+
+
+```
+
+
+
+```{r setup, results="hide"}
+
+library(tidyverse)
+library(keras)
+library(glue)
+
+source("utils.R")
+
+selected_features <- c(
+  "pair_id", "match",
+  "metric_fname_dl", "metric_fname_jw", "metric_fname_soundex",
+  "metric_lname_dl", "metric_lname_jw", "metric_lname_soundex",
+  "metric_ffreq_a", "metric_ffreq_b",
+  "metric_lfreq_a", "metric_lfreq_b", "metric_name_swaps",
+  "metric_dob_dist", "metric_year_dist", "metric_month_dist", "metric_day_dist",
+  "metric_dm_swaps", "birth_year_a", "birth_year_b",
+  "metric_gender_code_ff", "metric_gender_code_mm",
+  "metric_race_code_same", "metric_race_code_ww_bb",
+  "metric_potential_marriage"
+)
+
+clean_data <- function(df_input) {
+  df_input %>%
+    select(all_of(selected_features)) %>%
+    mutate(
+      birth_year_a = as.numeric(birth_year_a),
+      birth_year_b = as.numeric(birth_year_b)
+    )
+}
+
+input_folder <- "data/paper2/split_models1725_0122/"
+output_folder <- "output1725/result0122"
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+}
+
+file_list <- list.files(path = input_folder, pattern = "\\.rds$", full.names = TRUE)
+
+for (input_file in file_list) {
+  file_name <- tools::file_path_sans_ext(basename(input_file))
+  message(glue("Processing file: {file_name}"))
+
+  df <- read_rds(input_file)
+  df_train <- clean_data(df$df_train)
+  test_subsets <- map(df$test_subsets, clean_data)
+
+  message("NN Training Started")
+  model <- build_nn(df_train, glue("{output_folder}/{file_name}_nn.h5"))
+
+  nn_results_all <- tibble(
+    subset = integer(),
+    metrics = list(),
+    confusion_matrix = list(),
+    roc_curve = list(),
+    pred_confidence = list()
+  )
+
+  for (i in seq_along(test_subsets)) {
+    test_set <- test_subsets[[i]]
+    message(glue("Evaluating on Test Subset {i}"))
+
+    pred_prob <- predict_nn_2(model, test_set, df_train)
+
+    if (all(pred_prob >= 0.99 | pred_prob <= 0.01)) {
+      warning(glue("Prediction is highly skewed for {file_name} Test Subset {i}."))
+    }
+
+    result <- calculate_metrics(test_set, pred_prob)
+
+    nn_results_all <- bind_rows(nn_results_all, tibble(
+      subset = i,
+      metrics = list(result$metrics$df_metric_table),
+      confusion_matrix = list(result$metrics$confusion_matrix),
+      roc_curve = list(result$metrics$roc_curve),
+      pred_confidence = list(result$confidence)
+    ))
+  }
+
+  saveRDS(nn_results_all, glue("{output_folder}/{file_name}_nn_results_all.rds"))
+
+  nn_metrics_long <- nn_results_all %>%
+    mutate(metrics = map(metrics, ~ as_tibble(.x))) %>%
+    unnest(metrics)
+
+  write_csv(nn_metrics_long, glue("{output_folder}/{file_name}_nn_metrics_summary.csv"))
+
+  message(glue("{file_name} processing completed."))
+}
+
+message("All files processed successfully.")
+
+
+
+```
+
+
+```{r setup, results="hide"}
+
+library(tidyverse)
+library(keras)
+library(glue)
+
+source("utils.R")
+
+selected_features <- c(
+  "pair_id", "match",
+  "metric_fname_dl", "metric_fname_jw", "metric_fname_soundex",
+  "metric_lname_dl", "metric_lname_jw", "metric_lname_soundex",
+  "metric_ffreq_a", "metric_ffreq_b",
+  "metric_lfreq_a", "metric_lfreq_b", "metric_name_swaps",
+  "metric_dob_dist", "metric_year_dist", "metric_month_dist", "metric_day_dist",
+  "metric_dm_swaps", "birth_year_a", "birth_year_b",
+  "metric_gender_code_ff", "metric_gender_code_mm",
+  "metric_race_code_same", "metric_race_code_ww_bb",
+  "metric_potential_marriage"
+)
+
+clean_data <- function(df_input) {
+  df_input %>%
+    select(all_of(selected_features)) %>%
+    mutate(
+      birth_year_a = as.numeric(birth_year_a),
+      birth_year_b = as.numeric(birth_year_b)
+    )
+}
+
+input_folder <- "data/paper2/split_models1317/all"
+output_folder <- "output1317/result0630"
+
+file_list <- list.files(path = input_folder, pattern = "\\.rds$", full.names = TRUE)
+
+for (input_file in file_list) {
+  file_name <- tools::file_path_sans_ext(basename(input_file))
+  message(glue("Processing file: {file_name}"))
+
+  df <- read_rds(input_file)
+  df_train <- clean_data(df$df_train)
+  test_subsets <- map(df$test_subsets, clean_data)
+
+  message("NN Training Started")
+  model <- build_nn(df_train, glue("{output_folder}/{file_name}_nn.h5"))
+
+  nn_results_all <- tibble(
+    subset = integer(),
+    metrics = list(),
+    confusion_matrix = list(),
+    roc_curve = list(),
+    pred_confidence = list()
+  )
+
+  for (i in seq_along(test_subsets)) {
+    test_set <- test_subsets[[i]]
+    message(glue("Evaluating on Test Subset {i}"))
+
+    pred_prob <- predict_nn_2(model, test_set, df_train)
+
+    if (all(pred_prob >= 0.99 | pred_prob <= 0.01)) {
+      warning(glue("Prediction is highly skewed for {file_name} Test Subset {i}."))
+    }
+
+    result <- calculate_metrics(test_set, pred_prob)
+
+    nn_results_all <- bind_rows(nn_results_all, tibble(
+      subset = i,
+      metrics = list(result$metrics$df_metric_table),
+      confusion_matrix = list(result$metrics$confusion_matrix),
+      roc_curve = list(result$metrics$roc_curve),
+      pred_confidence = list(result$confidence)
+    ))
+  }
+
+  saveRDS(nn_results_all, glue("{output_folder}/{file_name}_nn_results_all.rds"))
+
+  nn_metrics_long <- nn_results_all %>%
+    mutate(metrics = map(metrics, ~ as_tibble(.x))) %>%
+    unnest(metrics)
+
+  write_csv(nn_metrics_long, glue("{output_folder}/{file_name}_nn_metrics_summary.csv"))
+
+  message(glue("{file_name} processing completed."))
+}
+
+message("All files processed successfully.")
+```
+
+```{r setup, results="hide"}
+
+library(tidyverse)
+
+folder_path <- "output1725/result1105/data/156/0/0/0"
+
+target_sizes <- c("n1000", "n4000", "n7000", "n10000")
+
+files_all <- list.files(
+  path = folder_path,
+  pattern = paste0(target_sizes, collapse="|"),
+  full.names = TRUE
+)
+
+print(files_all)
+
+# -------------------------
+# -------------------------
+extract_metric <- function(df, metric_name) {
+  map_dbl(df$metrics, ~
+            .x %>%
+              as_tibble() %>%
+              filter(metric == metric_name) %>%
+              pull(value))
+}
+
+# -------------------------
+# -------------------------
+result_all <- map_dfr(files_all, function(file) {
+  
+  df <- readRDS(file)
+  file_name <- basename(file)
+
+  model_type <- str_extract(file_name, "rf|svm|nn") %>%
+    recode(
+      "rf"  = "Random Forest",
+      "svm" = "SVM (RBF)",
+      "nn"  = "Dense Neural Net"
+    )
+
+  training_size <- str_extract(file_name, "n\\d+") %>%
+    str_replace("n", "") %>%
+    as.numeric()
+
+  tibble(
+    file = file_name,
+    model = model_type,
+    training_size = training_size,
+    precision = extract_metric(df, "precision"),
+    recall    = extract_metric(df, "recall"),
+    f1        = extract_metric(df, "f1")
+  )
+})
+
+print(result_all, n = Inf)
+
+
+
+```
+
+
+
+
+

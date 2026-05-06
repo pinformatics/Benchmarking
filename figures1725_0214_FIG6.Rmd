@@ -1,0 +1,360 @@
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+```
+
+#fig 6
+```{r}
+
+library(tidyverse)
+library(grid)
+
+# ============================================================
+# Folder config
+# ============================================================
+
+folder_path <- "output1725/result_0122/result/10000/"
+
+file_list <- list.files(
+  path = folder_path,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+# ============================================================
+# FAST extraction for multiple review metrics
+# ============================================================
+
+result_multi <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  file_name <- basename(file)
+
+  heterogeneity_rate <- str_extract(file_name, "e[0-9.]+") %>%
+    str_replace("e", "") %>%
+    as.numeric()
+
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  extract_metric <- function(m, metric_name) {
+    idx <- which(m$metric == metric_name)
+    if (length(idx) == 0) return(NA_real_)
+    m$value[idx[1]]
+  }
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    heterogeneity_rate = heterogeneity_rate,
+
+    review_pct_100 = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_100")),
+    review_pct_99  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_99")),
+    review_pct_95  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_95")),
+    review_pct_90  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_90"))
+  )
+})
+
+# ============================================================
+# Long format
+# ============================================================
+
+result_long <- result_multi %>%
+  pivot_longer(
+    cols = starts_with("review_pct"),
+    names_to = "requirement",
+    values_to = "review_pct"
+  ) %>%
+  mutate(
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost"
+    ),
+    requirement = case_when(
+      requirement == "review_pct_100" ~ "100%",
+      requirement == "review_pct_99"  ~ "99%",
+      requirement == "review_pct_95"  ~ "95%",
+      requirement == "review_pct_90"  ~ "90%"
+    ),
+    model_type = factor(
+      model_type,
+      levels = c(
+        "Dense Neural Net",
+        "SVM (RBF)",
+        "Random Forest",
+        "XGBoost"
+      )
+    ),
+    requirement = factor(
+      requirement,
+      levels = c("100%", "99%", "95%", "90%")
+    )
+  )
+
+# ============================================================
+# Plot settings
+# ============================================================
+
+model_colors <- c(
+  "Dense Neural Net" = "#0072B2",
+  "SVM (RBF)"        = "#D55E00",
+  "Random Forest"    = "#009E73",
+  "XGBoost"          = "#6A3D9A"
+)
+
+line_types <- c(
+  "100%" = "solid",
+  "99%"  = "longdash",
+  "95%"  = "dotdash",
+  "90%"  = "dotted"
+)
+
+line_sizes <- c(
+  "100%" = 1.6,
+  "99%"  = 1.3,
+  "95%"  = 1.0,
+  "90%"  = 0.8
+)
+
+line_alphas <- c(
+  "100%" = 1.0,
+  "99%"  = 0.9,
+  "95%"  = 0.8,
+  "90%"  = 0.7
+)
+
+# ============================================================
+# Plot
+# ============================================================
+
+p <- ggplot(
+  result_long,
+  aes(
+    x = heterogeneity_rate,
+    y = review_pct,
+    color = model_type,
+    linetype = requirement,
+    linewidth = requirement,
+    alpha = requirement
+  )
+) +
+
+  geom_smooth(
+    aes(fill = model_type),
+    se = TRUE,
+    method = "loess",
+    alpha = 0.35        
+  ) +
+
+  labs(
+    x = "Heterogeneity Rate",
+    y = "Review Percentage",
+    linetype = "Review requirement\n(PPV / NPV threshold)"
+  ) +
+
+  scale_color_manual(values = model_colors, guide = "none") +
+  scale_fill_manual(values = model_colors, guide = "none") +
+  scale_linetype_manual(values = line_types) +
+  scale_linewidth_manual(values = line_sizes, guide = "none") +
+  scale_alpha_manual(values = line_alphas, guide = "none") +
+
+  scale_x_continuous(
+    breaks = seq(0, 0.6, 0.1),
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  scale_y_continuous(
+    breaks = seq(0, 1, 0.1),
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+
+  facet_wrap(~ model_type, ncol = 1) +
+
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+
+    legend.key.width  = unit(2.8, "cm"),
+    legend.key.height = unit(1.2, "cm"),
+    legend.spacing.y  = unit(0.4, "cm"),
+
+    strip.text = element_text(size = 18)
+  )
+
+print(p)
+
+# ============================================================
+# Save
+# ============================================================
+
+ggsave(
+  filename = paste0(
+    "figures1725/fig6_",
+    format(Sys.Date(), "%m%d"),
+    ".png"
+  ),
+  plot = p,
+  width = 10,
+  height = 12,
+  dpi = 300
+)
+
+
+```
+
+```{r}
+# ============================================================
+# Libraries
+# ============================================================
+
+library(tidyverse)
+library(DT)
+
+# ============================================================
+# Folder config
+# ============================================================
+
+folder_path <- "output1725/result_0122/result/10000/"
+
+file_list <- list.files(
+  path = folder_path,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+# ============================================================
+# FAST extraction for multiple review metrics
+# ============================================================
+
+result_multi <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  file_name <- basename(file)
+
+  heterogeneity_rate <- str_extract(file_name, "e[0-9.]+") %>%
+    str_replace("e", "") %>%
+    as.numeric()
+
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  extract_metric <- function(m, metric_name) {
+    idx <- which(m$metric == metric_name)
+    if (length(idx) == 0) return(NA_real_)
+    m$value[idx[1]]
+  }
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    heterogeneity_rate = heterogeneity_rate,
+
+    review_pct_100 = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_100")),
+    review_pct_99  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_99")),
+    review_pct_95  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_95")),
+    review_pct_90  = map_dbl(df$metrics, ~ extract_metric(.x, "review_pct_90"))
+  )
+})
+
+# ============================================================
+# Summary stats (Model-level, wide)
+# ============================================================
+
+summary_stats <- result_multi %>%
+  group_by(model_type) %>%
+  summarise(
+    min_100  = min(review_pct_100, na.rm = TRUE),
+    mean_100 = mean(review_pct_100, na.rm = TRUE),
+    max_100  = max(review_pct_100, na.rm = TRUE),
+
+    min_99   = min(review_pct_99, na.rm = TRUE),
+    mean_99  = mean(review_pct_99, na.rm = TRUE),
+    max_99   = max(review_pct_99, na.rm = TRUE),
+
+    min_95   = min(review_pct_95, na.rm = TRUE),
+    mean_95  = mean(review_pct_95, na.rm = TRUE),
+    max_95   = max(review_pct_95, na.rm = TRUE),
+
+    min_90   = min(review_pct_90, na.rm = TRUE),
+    mean_90  = mean(review_pct_90, na.rm = TRUE),
+    max_90   = max(review_pct_90, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+# ============================================================
+# Align table with plotting logic
+# (Model × Requirement × min / mean / max)
+# ============================================================
+
+summary_aligned <- summary_stats %>%
+  pivot_longer(
+    cols = -model_type,
+    names_to = c("stat", "requirement"),
+    names_pattern = "(min|max|mean)_(100|99|95|90)",
+    values_to = "value"
+  ) %>%
+  mutate(
+    requirement = paste0(requirement, "%"),
+    stat = factor(stat, levels = c("min", "mean", "max")),
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost",
+      TRUE ~ model_type
+    ),
+    model_type = factor(
+      model_type,
+      levels = c(
+        "Dense Neural Net",
+        "SVM (RBF)",
+        "Random Forest",
+        "XGBoost"
+      )
+    ),
+    requirement = factor(
+      requirement,
+      levels = c("100%", "99%", "95%", "90%")
+    )
+  )
+
+# ============================================================
+# Final paper-ready table (wide)
+# ============================================================
+
+table_fig6 <- summary_aligned %>%
+  pivot_wider(
+    names_from  = stat,
+    values_from = value
+  ) %>%
+  arrange(model_type, requirement)
+
+
+table_fig6_display <- table_fig6 %>%
+  mutate(
+    min  = scales::percent(min,  accuracy = 0.1),
+    mean = scales::percent(mean, accuracy = 0.1),
+    max  = scales::percent(max,  accuracy = 0.1)
+  )
+
+datatable(
+  table_fig6_display,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    lengthMenu = c(5, 10, 20, 50),
+    autoWidth = TRUE
+  )
+)
+
+
+
+
+```

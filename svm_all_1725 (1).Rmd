@@ -1,0 +1,131 @@
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+```
+
+```{r}
+df <-  
+  read_rds("output1317/result0630/model_e0_n4000_svm_results_all.rds")df
+```
+
+
+
+
+
+```{r,message=TRUE}
+library(tidyverse)
+library(caret)
+library(glue)
+library(pROC)
+library(MLmetrics)
+source("utils.R")
+
+
+input_folder <- "data/paper2/split_models1725_0122/"
+output_folder <- "output1725/result_0122"
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+}
+
+file_list <- list.files(path = input_folder, pattern = "\\.rds$", full.names = TRUE)
+
+selected_features <- c(
+  "pair_id", "match",
+  "metric_fname_dl", "metric_fname_jw", "metric_fname_soundex",
+  "metric_lname_dl", "metric_lname_jw", "metric_lname_soundex",
+ "metric_ffreq_a", "metric_ffreq_b",
+  "metric_lfreq_a", "metric_lfreq_b",
+  "metric_dob_dist", "metric_year_dist", "metric_month_dist", "metric_day_dist",
+  "metric_dm_swaps", "birth_year_a", "birth_year_b",
+  "metric_gender_code_ff", "metric_gender_code_mm",
+  "metric_race_code_same", "metric_race_code_ww_bb",
+  "metric_potential_marriage"
+)
+
+clean_data <- function(df_input) {
+  df_input %>%
+    select(all_of(selected_features)) %>%
+    mutate(
+      birth_year_a = as.numeric(birth_year_a),
+      birth_year_b = as.numeric(birth_year_b)
+    )
+}
+
+for (file_path in file_list) {
+  file_name <- tools::file_path_sans_ext(basename(file_path))
+  message(glue("Processing file: {file_name}"))
+
+  df <- read_rds(file_path)
+
+  df_train <- clean_data(df$df_train)
+  test_subsets <- map(df$test_subsets, clean_data)
+
+  train_control <- trainControl(
+    method = "cv",
+    number = 10,
+    verboseIter = TRUE,
+    savePredictions = TRUE,
+    classProbs = TRUE
+  )
+
+  set.seed(13)
+
+  message("SVM")
+
+  model_svm <- train(
+    match ~ . -pair_id,
+    data = df_train,
+    tuneGrid = expand.grid(
+      sigma = seq(0.03546, 0.9, length.out = 3),
+      C = c(0.1, 0.5, 1, 10)
+    ),
+    trControl = train_control,
+    metric = "Accuracy",
+    preProcess = c("medianImpute"),
+    method = "svmRadial",
+    na.action = na.pass
+  )
+
+  saveRDS(model_svm, glue("{output_folder}/{file_name}_svm_trained.rds"))
+
+  svm_results_all <- tibble(
+    subset = integer(),
+    metrics = list(),
+    confusion_matrix = list(),
+    roc_curve = list(),
+    pred_confidence = list()
+  )
+
+  for (i in seq_along(test_subsets)) {
+    test_set <- test_subsets[[i]]
+    message(glue("Evaluating on Test Subset {i}"))
+
+    result <- evaluate_model(model_svm, df_test = test_set)
+
+    svm_results_all <- bind_rows(svm_results_all, tibble(
+      subset = i,
+      metrics = list(result$metrics$df_metric_table),
+      confusion_matrix = list(result$metrics$confusion_matrix),
+      roc_curve = list(result$metrics$roc_curve),
+      pred_confidence = list(result$confidence)
+    ))
+  }
+
+  saveRDS(svm_results_all, glue("{output_folder}/{file_name}_svm_results_all.rds"))
+
+  svm_metrics_long <- svm_results_all %>%
+    mutate(metrics = map(metrics, ~ as_tibble(.x))) %>%
+    unnest(metrics)
+
+  write_csv(svm_metrics_long, glue("{output_folder}/{file_name}_svm_metrics_summary.csv"))
+
+  message(glue("{file_name} processing completed."))
+}
+
+message("All files processed successfully.")
+
+
+
+
+```

@@ -1,0 +1,981 @@
+```{r setup, results="hide"}
+knitr::opts_chunk$set(cache = F, message = FALSE)
+source("utils.R")
+theme_set(theme_light())
+```
+
+
+```{r setup}
+# ============================================================
+# Setup
+# ============================================================
+knitr::opts_chunk$set(cache = FALSE, message = FALSE)
+
+library(tidyverse)
+library(patchwork)
+library(scales)
+
+theme_set(theme_light())
+
+# ============================================================
+# Common settings
+# ============================================================
+colors_model <- c(
+  "Dense Neural Net" = "#0072B2",
+  "SVM (RBF)"        = "#D55E00",
+  "Random Forest"    = "#009E73",
+  "XGBoost"          = "#6A3D9A"
+)
+
+x_breaks <- c(1000, 4000, 7000, 10000, 15000, 20000, 30000)
+
+# ============================================================
+# AUPRC (A)
+# ============================================================
+folder_path <- "output1725/result_0122/result/0/0/0"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+df_auprc <- map_dfr(file_list, function(file) {
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "auprc")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(model_type = recode(
+    model_type,
+    rf="Random Forest", svm="SVM (RBF)",
+    nn="Dense Neural Net", xgb="XGBoost"
+  ))
+
+p_auprc <- ggplot(df_auprc, aes(training_size, value, color=model_type)) +
+  geom_smooth(method="loess", se=TRUE, span=0.8, linewidth=1) +
+  scale_color_manual(values=colors_model) +
+  scale_x_continuous(breaks=x_breaks) +
+  scale_y_continuous(
+    limits=c(0,1),
+    breaks=seq(0,1,0.1),
+    labels=percent_format(accuracy=1)
+  ) +
+  labs(x=NULL, y="AUPRC", color=NULL) +
+  theme_minimal(base_size=16) +
+  theme(legend.position="top")
+
+# ============================================================
+# Manual Review (B)
+# ============================================================
+folder_path <- "output1725/result_0122/result/0"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+df_review <- map_dfr(file_list, function(file) {
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "review_pct_99")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(model_type = recode(
+    model_type,
+    rf="Random Forest", svm="SVM (RBF)",
+    nn="Dense Neural Net", xgb="XGBoost"
+  ))
+
+p_review <- ggplot(df_review, aes(training_size, value, color=model_type)) +
+  geom_smooth(method="loess", se=TRUE, span=0.8, linewidth=1) +
+  scale_color_manual(values=colors_model) +
+  scale_x_continuous(breaks=x_breaks) +
+  scale_y_continuous(
+    limits=c(0,1),
+    breaks=seq(0,1,0.1),
+    labels=percent_format(accuracy=1)
+  ) +
+  labs(x=NULL, y="Manual review (%)", color=NULL) +
+  theme_minimal(base_size=16) +
+  theme(legend.position="top")
+
+# ============================================================
+# AUROC (C)
+# ============================================================
+df_auroc <- map_dfr(file_list, function(file) {
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "auroc")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(model_type = recode(
+    model_type,
+    rf="Random Forest", svm="SVM (RBF)",
+    nn="Dense Neural Net", xgb="XGBoost"
+  ))
+
+p_auroc <- ggplot(df_auroc, aes(training_size, value, color=model_type)) +
+  geom_smooth(method="loess", se=TRUE, span=0.8, linewidth=1) +
+  scale_color_manual(values=colors_model) +
+  scale_x_continuous(breaks=x_breaks) +
+  scale_y_continuous(
+    limits=c(0.5,1),
+    breaks=seq(0.5,1,0.1),
+    labels=percent_format(accuracy=1)
+  ) +
+  labs(x=NULL, y="AUROC", color=NULL) +
+  theme_minimal(base_size=16) +
+  theme(legend.position="top")
+
+# ============================================================
+# F1 (D)
+# ============================================================
+df_f1 <- map_dfr(file_list, function(file) {
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "f1")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(model_type = recode(
+    model_type,
+    rf="Random Forest", svm="SVM (RBF)",
+    nn="Dense Neural Net", xgb="XGBoost"
+  ))
+
+p_f1 <- ggplot(df_f1, aes(training_size, value, color=model_type)) +
+  geom_smooth(method="loess", se=TRUE, span=0.75, linewidth=1) +
+  scale_color_manual(values=colors_model) +
+  scale_x_continuous(breaks=x_breaks) +
+  scale_y_continuous(
+    limits=c(0.5,1),
+    breaks=seq(0.5,1,0.1),
+    labels=percent_format(accuracy=1)
+  ) +
+  labs(x=NULL, y="F1 score", color=NULL) +
+  theme_minimal(base_size=16) +
+  theme(legend.position="top")
+
+# ============================================================
+# Combine (AUPRC | Review / AUROC | F1)
+# ============================================================
+fig7 <-
+  (p_auprc | p_review) /
+  (p_auroc | p_f1) +
+  plot_layout(guides="collect") +
+  plot_annotation(tag_levels="A") &
+  theme(
+    legend.position="top",
+    plot.tag=element_text(size=18, face="bold")
+  )
+
+fig7 <- fig7 & labs(x="Size of training data")
+
+print(fig7)
+
+# ============================================================
+# Save
+# ============================================================
+ggsave(
+  filename=paste0("figures1725/Figure7_final_",format(Sys.Date(),"%m%d"),".png"),
+  plot=fig7,
+  width=14,
+  height=10,
+  dpi=300
+)
+```
+
+
+```{r}
+# ============================================================
+# Setup
+# ============================================================
+knitr::opts_chunk$set(cache = FALSE, message = FALSE)
+
+library(tidyverse)
+library(patchwork)
+library(scales)
+
+theme_set(theme_light())
+
+# ============================================================
+# Common settings
+# ============================================================
+colors_model <- c(
+  "Dense Neural Net" = "#0072B2",
+  "SVM (RBF)"        = "#D55E00",
+  "Random Forest"    = "#009E73",
+  "XGBoost"          = "#6A3D9A"
+)
+
+x_breaks <- c(1000, 4000, 7000, 10000, 15000, 20000, 30000)
+
+# ============================================================
+# A. F1 score
+# ============================================================
+folder_path <- "output1725/result_0122/result/0/0/0"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+df_f1 <- map_dfr(file_list, function(file) {
+
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "f1")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM (RBF)",
+      nn  = "Dense Neural Net",
+      xgb = "XGBoost"
+    )
+  )
+
+p_f1 <- ggplot(df_f1, aes(training_size, value, color = model_type)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.75, linewidth = 1) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.05),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "F1 score", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# B. Manual Review % (99% PPV/NPV)
+# ============================================================
+folder_path <- "output1725/result_0122/result/0"
+file_list <- list.files(folder_path, "\\.rds$", full.names = TRUE)
+
+df_review <- map_dfr(file_list, function(file) {
+
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "review_pct_99")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM (RBF)",
+      nn  = "Dense Neural Net",
+      xgb = "XGBoost"
+    )
+  )
+
+p_review <- ggplot(df_review, aes(training_size, value, color = model_type)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.8, linewidth = 1) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks) +
+  scale_y_continuous(
+    limits = c(0.1, 1),
+    breaks = seq(0, 1, 0.1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "Manual review (%)", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# C. AUROC
+# ============================================================
+df_auroc <- map_dfr(file_list, function(file) {
+
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "auroc")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM (RBF)",
+      nn  = "Dense Neural Net",
+      xgb = "XGBoost"
+    )
+  )
+
+p_auroc <- ggplot(df_auroc, aes(training_size, value, color = model_type)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.8, linewidth = 1) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks) +
+  scale_y_continuous(
+    limits = c(0.5, 1.0),
+    breaks = seq(0.5, 1.0, 0.05),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(x = NULL, y = "AUROC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# D. AUPRC
+# ============================================================
+df_auprc <- map_dfr(file_list, function(file) {
+
+  d <- readRDS(file)
+  fname <- basename(file)
+
+  tibble(
+    training_size = str_extract(fname, "n\\d+") |> str_remove("n") |> as.numeric(),
+    model_type    = str_extract(fname, "rf|svm|nn|xgb"),
+    value = map_dbl(d$metrics, \(m) {
+      i <- which(m$metric == "auprc")
+      if (length(i) == 0) NA_real_ else m$value[i[1]]
+    })
+  )
+}) |>
+  mutate(
+    model_type = recode(
+      model_type,
+      rf  = "Random Forest",
+      svm = "SVM (RBF)",
+      nn  = "Dense Neural Net",
+      xgb = "XGBoost"
+    )
+  )
+
+p_auprc <- ggplot(df_auprc, aes(training_size, value, color = model_type)) +
+  geom_smooth(method = "loess", se = TRUE, span = 0.8, linewidth = 1) +
+  scale_color_manual(values = colors_model) +
+  scale_x_continuous(breaks = x_breaks) +
+  scale_y_continuous(
+  limits = c(0, 1),
+  breaks = seq(0, 1, 0.1),
+  labels = percent_format(accuracy = 1)
+) +
+  labs(x = NULL, y = "AUPRC", color = NULL) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "top")
+
+# ============================================================
+# Combine into 2 × 2 panel (PATCHWORK-SAFE)
+# ============================================================
+fig7 <-
+  (p_f1 | p_review) /
+  (p_auroc | p_auprc) +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.position = "top",
+    plot.tag = element_text(size = 18, face = "bold")
+  )
+
+# ✅ shared x-axis label (compatible with all patchwork versions)
+fig7 <- fig7 & labs(x = "Size of training data")
+
+print(fig7)
+
+# ============================================================
+# Save
+# ============================================================
+ggsave(
+  filename = paste0("figures1725/Figure7_ABCD_", format(Sys.Date(), "%m%d"), ".png"),
+  plot = fig7,
+  width = 14,
+  height = 10,
+  dpi = 300
+)
+
+
+
+
+```
+
+
+```{r}
+library(tidyverse)
+
+folder_path <- "output1725/result_0122/result/0/0/0"
+file_list <- list.files(path = folder_path, pattern = "\\.rds$", full.names = TRUE)
+
+# ------------------------------------------------------------
+# Read + Extract results (FAST aligned version)
+# ------------------------------------------------------------
+result_f1 <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+
+  file_name <- basename(file)
+
+  training_size <- str_extract(file_name, "n\\d+") %>%
+    str_replace("n", "") %>%
+    as.numeric()
+
+  # ✅ include xgb if needed
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  # ✅ FAST extraction (avoid tibble + filter)
+  f1_values <- map_dbl(df$metrics, function(m) {
+
+    idx <- which(m$metric == "f1")
+
+    if (length(idx) == 0) return(NA_real_)
+
+    m$value[idx[1]]
+  })
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    training_size = training_size,
+    f1 = f1_values
+  )
+})
+
+# ------------------------------------------------------------
+# Clean model names
+# ------------------------------------------------------------
+result_f1 <- result_f1 %>%
+  mutate(
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost",
+      TRUE ~ model_type
+    )
+  )
+
+# ------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------
+p <- ggplot(result_f1, aes(x = training_size, y = f1, color = model_type)) +
+  geom_smooth(
+    se = TRUE,
+    method = "loess",
+    span = 0.75,
+    linewidth = 1   # ✅ replace deprecated size
+  ) +
+  labs(
+    x = "Size of training data",
+    y = "F1 score",
+    color = NULL
+  ) +
+  scale_color_manual(values = c(
+    "Dense Neural Net" = "#0072B2",
+    "SVM (RBF)"        = "#D55E00",
+    "Random Forest"    = "#009E73",
+    "XGBoost"          = "#6A3D9A"
+  )) +
+  scale_x_continuous(breaks = c(1000, 4000, 7000, 10000,15000,20000,30000)) +
+  scale_y_continuous(
+    breaks = seq(0.6, 1.0, 0.1),
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0.6, 1.0)
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14)
+  )
+
+print(p)
+
+# ------------------------------------------------------------
+# Save figure with today's date+time
+# ------------------------------------------------------------
+out_file <- paste0(
+  "figures1725/7a_",
+  format(Sys.time(), "%m%d"),
+  ".png"
+)
+
+ggsave(out_file, plot = p, width = 10, height = 8, dpi = 300)
+
+cat("✅ Saved figure:", out_file, "\n")
+
+# ------------------------------------------------------------
+# Summary table
+# ------------------------------------------------------------
+library(scales)
+
+summary_f1 <- result_f1 %>%
+  group_by(model_type, training_size) %>%
+  summarise(
+    f1_mean = mean(f1, na.rm = TRUE),
+    f1_min  = min(f1, na.rm = TRUE),
+    f1_max  = max(f1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model_type, training_size)
+
+summary_f1 %>%
+  mutate(across(starts_with("f1_"), ~ percent(.x, accuracy = 0.01))) %>%
+  print(n = Inf)
+
+print(p)
+
+
+
+```
+
+
+
+#7b
+```{r}
+library(tidyverse)
+
+# ------------------------------------------------------------
+# Folder path
+# ------------------------------------------------------------
+folder_path <- "output1725/result_0122/result/0"
+
+file_list <- list.files(
+  path = folder_path,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+# ------------------------------------------------------------
+# Read + Extract results (FAST aligned version)
+# ------------------------------------------------------------
+result <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+
+  file_name <- basename(file)
+
+  training_size <- str_extract(file_name, "n\\d+") %>%
+    str_replace("n", "") %>%
+    as.numeric()
+
+  # ✅ include xgb
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  # ✅ FAST extraction: avoid tibble + filter
+  review_values <- map_dbl(df$metrics, function(m) {
+
+    idx <- which(m$metric == "review_pct_99")
+
+    if (length(idx) == 0) return(NA_real_)
+
+    m$value[idx[1]]
+  })
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    training_size = training_size,
+    review_pct_99 = review_values
+  )
+})
+
+# ------------------------------------------------------------
+# Clean model names (ONLY once)
+# ------------------------------------------------------------
+result <- result %>%
+  mutate(
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost",
+      TRUE ~ model_type
+    )
+  )
+
+print(result)
+
+# ------------------------------------------------------------
+# Summary table
+# ------------------------------------------------------------
+summary_table <- result %>%
+  group_by(model_type, training_size) %>%
+  summarise(
+    max_review  = max(review_pct_99, na.rm = TRUE),
+    min_review  = min(review_pct_99, na.rm = TRUE),
+    mean_review = mean(review_pct_99, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model_type, training_size)
+
+print(summary_table)
+
+# ------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------
+p <- ggplot(result,
+            aes(x = training_size,
+                y = review_pct_99,
+                color = model_type)) +
+
+  geom_smooth(
+    se = TRUE,
+    method = "loess",
+    span = 0.8,
+    linewidth = 1   # ✅ replace deprecated size
+  ) +
+
+  labs(
+    x = "Size of training data",
+    y = "Percentage of Manual Review",
+    color = NULL
+  ) +
+
+  scale_color_manual(values = c(
+    "Dense Neural Net" = "#0072B2",
+    "SVM (RBF)"        = "#D55E00",
+    "Random Forest"    = "#009E73",
+    "XGBoost"          = "#6A3D9A"
+  )) +
+
+  scale_x_continuous(
+    breaks = c(1000, 4000, 7000, 10000, 15000, 20000, 30000)
+  ) +
+
+  scale_y_continuous(
+    breaks = seq(0, 1, 0.1),
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0.1, 1)
+  ) +
+
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14)
+  )
+
+print(p)
+
+ggsave(
+  filename = paste0(
+    "figures1725/7b_",
+    format(Sys.time(), "%m%d"),
+    ".png"
+  ),
+  plot = p,
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+
+print(p)
+
+print(summary_table, n = Inf)
+
+```
+
+#auprc_size
+```{r}
+library(tidyverse)
+
+folder_path <- "output1725/result_0122/result/0/0/0"
+
+file_list <- list.files(
+  path = folder_path,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+# ------------------------------------------------------------
+# Extract AUPRC
+# ------------------------------------------------------------
+result <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  file_name <- basename(file)
+
+  training_size <- str_extract(file_name, "n\\d+") %>%
+    str_replace("n", "") %>%
+    as.numeric()
+
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  # ✅ Extract AUPRC metric
+  auprc_values <- map_dbl(df$metrics, function(m) {
+
+    idx <- which(m$metric == "auprc")   # ✅ change here
+
+    if (length(idx) == 0) return(NA_real_)
+
+    m$value[idx[1]]
+  })
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    training_size = training_size,
+    auprc = auprc_values               # ✅ column name
+  )
+})
+
+# ------------------------------------------------------------
+# Clean model names
+# ------------------------------------------------------------
+result <- result %>%
+  mutate(
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost",
+      TRUE ~ model_type
+    )
+  )
+
+print(result)
+
+# ------------------------------------------------------------
+# Summary table
+# ------------------------------------------------------------
+summary_table <- result %>%
+  group_by(model_type, training_size) %>%
+  summarise(
+    max_auprc  = max(auprc, na.rm = TRUE),
+    min_auprc  = min(auprc, na.rm = TRUE),
+    mean_auprc = mean(auprc, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model_type, training_size)
+
+print(summary_table)
+
+# ------------------------------------------------------------
+# Plot (AUPRC as Percent)
+# ------------------------------------------------------------
+p <- ggplot(result,
+            aes(x = training_size,
+                y = auprc,
+                color = model_type)) +
+
+  geom_smooth(
+    se = TRUE,
+    method = "loess",
+    span = 0.8,
+    linewidth = 1
+  ) +
+
+  labs(
+    x = "Size of training data",
+    y = "AUPRC",
+    color = NULL
+  ) +
+
+  scale_color_manual(values = c(
+    "Dense Neural Net" = "#0072B2",
+    "SVM (RBF)"        = "#D55E00",
+    "Random Forest"    = "#009E73",
+    "XGBoost"          = "#6A3D9A"
+  )) +
+
+  scale_x_continuous(
+    breaks = c(1000, 4000, 7000, 10000, 15000, 20000, 30000)
+  ) +
+
+  # ✅ Percent y-axis
+  scale_y_continuous(
+    breaks = seq(0, 1.0, 0.1),
+    limits = c(0, 1.0),
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14)
+  )
+
+print(p)
+
+# ------------------------------------------------------------
+# Save figure (MMDD only)
+# ------------------------------------------------------------
+ggsave(
+  filename = paste0(
+    "figures1725/7b_AUPRC_",
+    format(Sys.Date(), "%m%d"),
+    ".png"
+  ),
+  plot = p,
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+print(p)
+
+```
+
+#auroc_size
+```{r}
+library(tidyverse)
+
+folder_path <- "output1725/result_0122/result/0/0/0"
+
+file_list <- list.files(
+  path = folder_path,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+# ------------------------------------------------------------
+# Extract AUROC
+# ------------------------------------------------------------
+result <- map_dfr(file_list, function(file) {
+
+  df <- readRDS(file)
+  file_name <- basename(file)
+
+  training_size <- str_extract(file_name, "n\\d+") %>%
+    str_replace("n", "") %>%
+    as.numeric()
+
+  model_type <- str_extract(file_name, "rf|svm|nn|xgb")
+
+  auroc_values <- map_dbl(df$metrics, function(m) {
+
+    idx <- which(m$metric == "auroc")   # ✅ AUROC metric
+
+    if (length(idx) == 0) return(NA_real_)
+
+    m$value[idx[1]]
+  })
+
+  tibble(
+    file_name = file_name,
+    model_type = model_type,
+    training_size = training_size,
+    auroc = auroc_values
+  )
+})
+
+# ------------------------------------------------------------
+# Clean model names
+# ------------------------------------------------------------
+result <- result %>%
+  mutate(
+    model_type = case_when(
+      model_type == "rf"  ~ "Random Forest",
+      model_type == "svm" ~ "SVM (RBF)",
+      model_type == "nn"  ~ "Dense Neural Net",
+      model_type == "xgb" ~ "XGBoost",
+      TRUE ~ model_type
+    )
+  )
+
+# ------------------------------------------------------------
+# Plot (AUROC as Percent)
+# ------------------------------------------------------------
+p <- ggplot(result,
+            aes(x = training_size,
+                y = auroc,
+                color = model_type)) +
+
+  geom_smooth(
+    se = TRUE,
+    method = "loess",
+    span = 0.8,
+    linewidth = 1
+  ) +
+
+  labs(
+    x = "Size of training data",
+    y = "AUROC",
+    color = NULL
+  ) +
+
+  scale_color_manual(values = c(
+    "Dense Neural Net" = "#0072B2",
+    "SVM (RBF)"        = "#D55E00",
+    "Random Forest"    = "#009E73",
+    "XGBoost"          = "#6A3D9A"
+  )) +
+
+  scale_x_continuous(
+    breaks = c(1000, 4000, 7000, 10000, 15000, 20000, 30000)
+  ) +
+
+  # ✅ Percent axis formatting
+  scale_y_continuous(
+    breaks = seq(0.5, 1.0, 0.05),
+    limits = c(0.5, 1.0),
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 16),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14)
+  )
+
+print(p)
+
+# ------------------------------------------------------------
+# Save figure (MMDD)
+# ------------------------------------------------------------
+ggsave(
+  filename = paste0(
+    "figures1725/7b_AUROC_",
+    format(Sys.Date(), "%m%d"),
+    ".png"
+  ),
+  plot = p,
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+
+```
+
